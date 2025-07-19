@@ -1,0 +1,11 @@
+python-binance==1.0.17
+pyupbit==0.2.33
+python-dotenv==1.0.0
+requests==2.31.0
+websocket-client==1.6.3
+aiohttp==3.8.5
+pandas==2.0.3
+numpy==1.24.3
+colorama==0.4.6
+loguru==0.7.0
+ccxt==4.0.0

@@ -1,0 +1,104 @@
+{
+  "a_margin": {
+    "default": 0.004
+  },
+  "trade_volume_usdt": 1000.0,
+  "min_trade_volume_usdt": 100.0,
+  "max_trade_volume_usdt": 5000.0,
+  "fee_data": {
+    "upbit": {
+      "trade": 0.0025,
+      "withdraw": {
+        "BTC": 0.0005,
+        "ETH": 0.007,
+        "XRP": 0.25,
+        "SOL": 0.01,
+        "ADA": 1.0,
+        "DOGE": 5.0,
+        "AVAX": 0.01,
+        "MATIC": 5.0,
+        "DOT": 0.1,
+        "LINK": 0.35,
+        "ATOM": 0.005,
+        "UNI": 0.5,
+        "LTC": 0.01,
+        "BCH": 0.001,
+        "ALGO": 0.1,
+        "XLM": 0.01,
+        "VET": 30.0,
+        "TRX": 1.0,
+        "EOS": 0.1,
+        "MANA": 8.0
+      }
+    },
+    "binance": {
+      "trade": 0.001,
+      "withdraw": {
+        "BTC": 0.0002,
+        "ETH": 0.003,
+        "XRP": 0.25,
+        "SOL": 0.01,
+        "ADA": 1.0,
+        "DOGE": 5.0,
+        "AVAX": 0.01,
+        "MATIC": 1.0,
+        "DOT": 0.1,
+        "LINK": 0.1,
+        "ATOM": 0.004,
+        "UNI": 0.2,
+        "LTC": 0.001,
+        "BCH": 0.0001,
+        "ALGO": 0.01,
+        "XLM": 0.01,
+        "VET": 20.0,
+        "TRX": 1.0,
+        "EOS": 0.1,
+        "MANA": 3.0
+      }
+    }
+  },
+  "monitoring": {
+    "check_interval_seconds": 1,
+    "price_update_threshold": 0.0001,
+    "max_price_age_seconds": 10
+  },
+  "risk_management": {
+    "max_open_positions": 3,
+    "max_position_size_percent": 30,
+    "stop_loss_percent": 2.0,
+    "daily_loss_limit_usdt": 1000.0,
+    "min_balance_usdt": 500.0
+  },
+  "network_confirmations": {
+    "BTC": 2,
+    "ETH": 12,
+    "XRP": 0,
+    "SOL": 0,
+    "ADA": 15,
+    "DOGE": 6,
+    "AVAX": 12,
+    "MATIC": 800,
+    "DOT": 0,
+    "LINK": 12,
+    "ATOM": 0,
+    "UNI": 12,
+    "LTC": 6,
+    "BCH": 6,
+    "ALGO": 0,
+    "XLM": 0,
+    "VET": 20,
+    "TRX": 0,
+    "EOS": 0,
+    "MANA": 35
+  },
+  "api_limits": {
+    "upbit": {
+      "requests_per_second": 10,
+      "order_per_second": 8
+    },
+    "binance": {
+      "weight_per_minute": 6000,
+      "order_per_second": 50
+    }
+  }
+}
