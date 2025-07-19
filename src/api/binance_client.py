@@ -1,10 +1,11 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 from decimal import Decimal
 import asyncio
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from loguru import logger
 import time
+from datetime import datetime, timedelta
 
 
 class BinanceClient:
@@ -21,6 +22,9 @@ class BinanceClient:
         self._symbol_info_cache = {}
         self._last_cache_update = 0
         self.CACHE_DURATION = 3600  # 1 hour
+        self._usdt_markets_cache = set()
+        self._usdt_markets_last_update = None
+        self._usdt_cache_duration = timedelta(minutes=30)
         
     def _update_symbol_cache(self):
         if time.time() - self._last_cache_update > self.CACHE_DURATION:
@@ -250,4 +254,45 @@ class BinanceClient:
             }
         except BinanceAPIException as e:
             logger.error(f"Failed to get 24hr stats for {symbol}: {e}")
+            raise
+            
+    def get_usdt_markets(self, force_refresh: bool = False) -> Set[str]:
+        """Get all USDT trading pairs from Binance"""
+        now = datetime.now()
+        
+        # Check cache
+        if (not force_refresh and 
+            self._usdt_markets_cache and 
+            self._usdt_markets_last_update and 
+            now - self._usdt_markets_last_update < self._usdt_cache_duration):
+            return self._usdt_markets_cache
+            
+        try:
+            # Get exchange info
+            exchange_info = self.client.get_exchange_info()
+            
+            # Filter USDT markets
+            usdt_markets = set()
+            for symbol_info in exchange_info['symbols']:
+                symbol = symbol_info['symbol']
+                quote_asset = symbol_info['quoteAsset']
+                status = symbol_info['status']
+                
+                # Only include active USDT pairs
+                if quote_asset == 'USDT' and status == 'TRADING':
+                    usdt_markets.add(symbol)
+                    
+            # Update cache
+            self._usdt_markets_cache = usdt_markets
+            self._usdt_markets_last_update = now
+            
+            logger.info(f"Updated USDT markets cache: {len(usdt_markets)} markets found")
+            return usdt_markets
+            
+        except Exception as e:
+            logger.error(f"Failed to get USDT markets: {e}")
+            # Return cache if available, otherwise raise
+            if self._usdt_markets_cache:
+                logger.warning("Using cached USDT markets due to API error")
+                return self._usdt_markets_cache
             raise

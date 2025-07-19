@@ -9,6 +9,7 @@ import uuid
 import hashlib
 from urllib.parse import urlencode
 import requests
+from datetime import datetime, timedelta
 
 
 class UpbitClient:
@@ -17,6 +18,9 @@ class UpbitClient:
         self.secret_key = secret_key
         self.upbit = pyupbit.Upbit(access_key, secret_key)
         self.server_url = "https://api.upbit.com"
+        self._krw_markets_cache = []
+        self._krw_markets_last_update = None
+        self._cache_duration = timedelta(minutes=30)
         
     def _generate_jwt_token(self, query: Dict = None) -> str:
         payload = {
@@ -334,4 +338,59 @@ class UpbitClient:
             }
         except Exception as e:
             logger.error(f"Failed to get 24hr stats for {ticker}: {e}")
+            raise
+            
+    def get_krw_markets(self, force_refresh: bool = False) -> List[str]:
+        """Get all KRW market symbols from Upbit"""
+        now = datetime.now()
+        
+        # Check cache
+        if (not force_refresh and 
+            self._krw_markets_cache and 
+            self._krw_markets_last_update and 
+            now - self._krw_markets_last_update < self._cache_duration):
+            return self._krw_markets_cache
+            
+        try:
+            # Get all markets
+            markets = pyupbit.get_tickers()
+            
+            # Filter KRW markets and extract coin symbols
+            krw_markets = []
+            for market in markets:
+                if market.startswith('KRW-'):
+                    coin_symbol = market.split('-')[1]
+                    krw_markets.append(coin_symbol)
+                    
+            # Update cache
+            self._krw_markets_cache = krw_markets
+            self._krw_markets_last_update = now
+            
+            logger.info(f"Updated KRW markets cache: {len(krw_markets)} markets found")
+            return krw_markets
+            
+        except Exception as e:
+            logger.error(f"Failed to get KRW markets: {e}")
+            # Return cache if available, otherwise raise
+            if self._krw_markets_cache:
+                logger.warning("Using cached KRW markets due to API error")
+                return self._krw_markets_cache
+            raise
+            
+    def get_tradable_markets_with_binance(self, binance_symbols: set) -> List[str]:
+        """Get KRW markets that also have USDT pairs on Binance"""
+        try:
+            krw_markets = self.get_krw_markets()
+            
+            # Filter markets that exist on both exchanges
+            common_markets = []
+            for coin in krw_markets:
+                if f"{coin}USDT" in binance_symbols:
+                    common_markets.append(coin)
+                    
+            logger.info(f"Found {len(common_markets)} tradable markets on both Upbit and Binance")
+            return common_markets
+            
+        except Exception as e:
+            logger.error(f"Failed to get tradable markets: {e}")
             raise

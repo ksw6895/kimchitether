@@ -75,6 +75,7 @@ class ArbitrageTradingBot:
             
         self.running = False
         self.tasks = []
+        self.monitor_coins = []  # Dynamic coin list
         
     async def start(self):
         """Start the trading bot"""
@@ -91,6 +92,9 @@ class ArbitrageTradingBot:
             dashboard_thread.start()
             logger.info(f"Dashboard started on port {config.dashboard_port}")
             
+        # Initialize dynamic coin list
+        await self._initialize_coin_list()
+        
         # Check initial balances
         await self._check_balances()
         
@@ -119,11 +123,64 @@ class ArbitrageTradingBot:
         # Wait for tasks to complete
         await asyncio.gather(*self.tasks, return_exceptions=True)
         
+    async def _initialize_coin_list(self):
+        """Initialize the dynamic coin list"""
+        try:
+            # Get Binance USDT markets first
+            binance_usdt_markets = self.binance.get_usdt_markets()
+            
+            # Get Upbit KRW markets that also exist on Binance
+            self.monitor_coins = self.upbit.get_tradable_markets_with_binance(binance_usdt_markets)
+            
+            # If config has specific coins, use intersection
+            if config.monitor_coins:
+                configured_coins = set(config.monitor_coins)
+                self.monitor_coins = [coin for coin in self.monitor_coins if coin in configured_coins]
+                logger.info(f"Using configured coins that exist on both exchanges: {self.monitor_coins}")
+            else:
+                logger.info(f"Monitoring all {len(self.monitor_coins)} coins available on both exchanges")
+                
+            # Update coin list periodically
+            asyncio.create_task(self._update_coin_list_periodically())
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize coin list: {e}")
+            # Fallback to config coins
+            self.monitor_coins = config.monitor_coins
+            logger.warning(f"Using fallback coin list from config: {self.monitor_coins}")
+            
+    async def _update_coin_list_periodically(self):
+        """Update coin list every 30 minutes"""
+        while self.running:
+            await asyncio.sleep(1800)  # 30 minutes
+            try:
+                binance_usdt_markets = self.binance.get_usdt_markets(force_refresh=True)
+                new_coins = self.upbit.get_tradable_markets_with_binance(binance_usdt_markets)
+                
+                # Check for new coins
+                added = set(new_coins) - set(self.monitor_coins)
+                removed = set(self.monitor_coins) - set(new_coins)
+                
+                if added:
+                    logger.info(f"New coins added to monitoring: {added}")
+                if removed:
+                    logger.warning(f"Coins removed from monitoring: {removed}")
+                    
+                # Update the list
+                if config.monitor_coins:
+                    configured_coins = set(config.monitor_coins)
+                    self.monitor_coins = [coin for coin in new_coins if coin in configured_coins]
+                else:
+                    self.monitor_coins = new_coins
+                    
+            except Exception as e:
+                logger.error(f"Failed to update coin list: {e}")
+        
     async def _monitor_premiums(self):
         """Monitor premium rates for configured coins"""
         while self.running:
             try:
-                for coin in config.monitor_coins:
+                for coin in self.monitor_coins:
                     premium_info = self.premium_calculator.calculate_premium(coin)
                     if premium_info:
                         logger.info(
@@ -179,7 +236,7 @@ class ArbitrageTradingBot:
                     continue
                     
                 # Check each coin for opportunities
-                for coin in config.monitor_coins:
+                for coin in self.monitor_coins:
                     opportunity = self.premium_calculator.check_arbitrage_opportunity(
                         coin,
                         config.safety_margin_percent,
@@ -351,7 +408,7 @@ async def main():
 if __name__ == "__main__":
     logger.info("=" * 50)
     logger.info("암호화폐 재정거래 봇 시작")
-    logger.info(f"모니터링 코인: {', '.join(config.monitor_coins)}")
+    logger.info(f"초기 모니터링 코인: {', '.join(config.monitor_coins) if config.monitor_coins else '모든 가능한 코인'}")
     logger.info(f"안전 마진: {config.safety_margin_percent}%")
     logger.info(f"거래 범위: {config.min_trade_amount_krw:,.0f} - {config.max_trade_amount_krw:,.0f} KRW")
     logger.info(f"모드: {'테스트넷' if config.testnet else '실거래'} / {'모의거래' if config.dry_run else '실거래'}")

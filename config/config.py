@@ -20,8 +20,8 @@ class TradingConfig(BaseSettings):
     min_trade_amount_krw: Decimal = Field(default=Decimal("100000"), env='MIN_TRADE_AMOUNT_KRW')
     max_trade_amount_krw: Decimal = Field(default=Decimal("5000000"), env='MAX_TRADE_AMOUNT_KRW')
     
-    # Coins to monitor
-    monitor_coins: List[str] = Field(default=['BTC', 'ETH', 'XRP', 'ADA', 'SOL'])
+    # Coins to monitor (empty list means monitor all available coins)
+    monitor_coins: List[str] = Field(default=[])
     
     # Risk Management
     max_slippage_percent: Decimal = Field(default=Decimal("0.5"), env='MAX_SLIPPAGE_PERCENT')
