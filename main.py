@@ -16,6 +16,7 @@ from src.utils.risk_manager import RiskManager
 from src.strategies.forward_arbitrage import ForwardArbitrageStrategy
 from src.strategies.reverse_arbitrage import ReverseArbitrageStrategy
 from src.monitoring.dashboard import TradingDashboard
+from src.simulation import VirtualBalanceManager, MockBinanceClient, MockUpbitClient, PerformanceAnalyzer
 
 
 class ArbitrageTradingBot:
@@ -34,16 +35,64 @@ class ArbitrageTradingBot:
         
         logger.info("Initializing Arbitrage Trading Bot...")
         
-        # Initialize components
-        self.binance = BinanceClient(
+        # Initialize real API clients
+        real_binance = BinanceClient(
             config.binance_api_key,
             config.binance_secret_key,
             testnet=config.testnet
         )
-        self.upbit = UpbitClient(
+        real_upbit = UpbitClient(
             config.upbit_access_key,
             config.upbit_secret_key
         )
+        
+        # Verify Upbit API access before continuing
+        logger.info("Verifying Upbit API access...")
+        upbit_verified, upbit_msg = real_upbit.verify_api_access()
+        if not upbit_verified:
+            logger.error(f"Upbit API verification failed: {upbit_msg}")
+            logger.error("Please check:")
+            logger.error("1. Your API keys are correctly set in .env file")
+            logger.error("2. Your IP address is whitelisted in Upbit API settings")
+            logger.error("3. API permissions include reading market data")
+            sys.exit(1)
+        else:
+            logger.info(f"✓ Upbit API verified: {upbit_msg}")
+        
+        # Initialize components based on mode
+        if config.dry_run:
+            # Initialize virtual balance manager for paper trading
+            initial_balances = {
+                "binance": {
+                    "USDT": Decimal("10000"),  # Start with $10,000 USDT
+                    "BTC": Decimal("0"),
+                    "ETH": Decimal("0")
+                },
+                "upbit": {
+                    "KRW": Decimal("10000000"),  # Start with 10M KRW
+                    "BTC": Decimal("0"),
+                    "ETH": Decimal("0"),
+                    "USDT": Decimal("0")
+                }
+            }
+            
+            self.balance_manager = VirtualBalanceManager(
+                initial_balances=initial_balances,
+                state_file="simulation_state.json"
+            )
+            
+            # Use mock clients for paper trading
+            self.binance = MockBinanceClient(real_binance, self.balance_manager)
+            self.upbit = MockUpbitClient(real_upbit, self.balance_manager)
+            
+            logger.info("Paper trading mode enabled with virtual balances")
+        else:
+            # Use real clients for live trading
+            self.binance = real_binance
+            self.upbit = real_upbit
+            self.balance_manager = None
+            
+            logger.info("Live trading mode enabled")
         self.exchange_rate = ExchangeRateProvider(
             cache_duration=config.exchange_rate_cache_duration
         )
@@ -59,7 +108,8 @@ class ArbitrageTradingBot:
             self.binance,
             self.upbit,
             max_slippage=config.max_slippage_percent / 100,
-            transfer_timeout_minutes=config.transfer_timeout_minutes
+            transfer_timeout_minutes=config.transfer_timeout_minutes,
+            is_paper_trading=config.dry_run
         )
         self.reverse_strategy = ReverseArbitrageStrategy(
             self.binance,
@@ -76,6 +126,12 @@ class ArbitrageTradingBot:
         self.running = False
         self.tasks = []
         self.monitor_coins = []  # Dynamic coin list
+        self._shutdown_in_progress = False  # Prevent multiple shutdowns
+        
+        # Track coins with API access issues
+        self.failed_orderbook_coins = set()
+        self.orderbook_failure_counts = {}
+        self.max_orderbook_failures = 5  # Skip coin after 5 consecutive failures
         
     async def start(self):
         """Start the trading bot"""
@@ -113,6 +169,11 @@ class ArbitrageTradingBot:
             
     async def stop(self):
         """Stop the trading bot"""
+        # Prevent multiple stop calls
+        if self._shutdown_in_progress:
+            return
+            
+        self._shutdown_in_progress = True
         logger.info("Stopping trading bot...")
         self.running = False
         
@@ -122,6 +183,38 @@ class ArbitrageTradingBot:
             
         # Wait for tasks to complete
         await asyncio.gather(*self.tasks, return_exceptions=True)
+        
+        # Generate performance report for paper trading
+        if config.dry_run and self.balance_manager:
+            logger.info("Generating paper trading performance report...")
+            
+            try:
+                # Initialize performance analyzer
+                analyzer = PerformanceAnalyzer(self.balance_manager, self.exchange_rate)
+                
+                # Calculate initial capital
+                initial_capital_krw = Decimal("20000000")  # 10M KRW + 10K USDT * ~1300
+                
+                # Analyze performance
+                metrics = analyzer.analyze_performance(initial_capital_krw)
+                
+                # Generate and save report
+                text_report = analyzer.generate_report(metrics, format="text")
+                json_report = analyzer.generate_report(metrics, format="json")
+                
+                # Save reports
+                with open("paper_trading_report.txt", "w") as f:
+                    f.write(text_report)
+                    
+                with open("paper_trading_report.json", "w") as f:
+                    f.write(json_report)
+                    
+                # Print summary to console
+                logger.info("\n" + text_report)
+                logger.info("Performance reports saved to paper_trading_report.txt and paper_trading_report.json")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate performance report: {e}")
         
     async def _initialize_coin_list(self):
         """Initialize the dynamic coin list"""
@@ -181,8 +274,16 @@ class ArbitrageTradingBot:
         while self.running:
             try:
                 for coin in self.monitor_coins:
+                    # Skip coins with persistent orderbook failures
+                    if coin in self.failed_orderbook_coins:
+                        continue
+                        
                     premium_info = self.premium_calculator.calculate_premium(coin)
                     if premium_info:
+                        # Reset failure count on success
+                        if coin in self.orderbook_failure_counts:
+                            self.orderbook_failure_counts[coin] = 0
+                            
                         logger.info(
                             f"{coin} - Upbit: {premium_info.upbit_price_krw:,.0f} KRW, "
                             f"Binance: {premium_info.binance_price_krw:,.0f} KRW, "
@@ -196,6 +297,9 @@ class ArbitrageTradingBot:
                                 'premium_rate': float(premium_info.premium_rate),
                                 'timestamp': premium_info.timestamp
                             })
+                    else:
+                        # Track orderbook failures
+                        self._handle_orderbook_failure(coin)
                             
                 # Monitor USDT premium
                 usdt_premium = self.premium_calculator.calculate_tether_premium()
@@ -237,6 +341,10 @@ class ArbitrageTradingBot:
                     
                 # Check each coin for opportunities
                 for coin in self.monitor_coins:
+                    # Skip coins with persistent orderbook failures
+                    if coin in self.failed_orderbook_coins:
+                        continue
+                        
                     opportunity = self.premium_calculator.check_arbitrage_opportunity(
                         coin,
                         config.safety_margin_percent,
@@ -251,10 +359,8 @@ class ArbitrageTradingBot:
                         if can_trade:
                             logger.info(f"Arbitrage opportunity found: {opportunity}")
                             
-                            if not config.dry_run:
-                                await self._execute_arbitrage(opportunity)
-                            else:
-                                logger.info("DRY RUN: Would execute trade")
+                            # Execute trade (both live and paper trading)
+                            await self._execute_arbitrage(opportunity)
                                 
                             if self.dashboard:
                                 self.dashboard.update_data('alert', {
@@ -351,8 +457,11 @@ class ArbitrageTradingBot:
         """Check and log exchange balances"""
         try:
             # Get balances
-            upbit_krw = self.upbit.get_balance('KRW')['total']
-            binance_usdt = self.binance.get_balance('USDT')['total']
+            upbit_krw_balance = self.upbit.get_balance('KRW')
+            binance_usdt_balance = self.binance.get_balance('USDT')
+            
+            upbit_krw = upbit_krw_balance['total']
+            binance_usdt = binance_usdt_balance['total']
             
             # Get exchange rate
             usd_krw_rate = self.exchange_rate.get_usd_krw_rate()
@@ -370,12 +479,55 @@ class ArbitrageTradingBot:
                         'message': message
                     })
                     
-            # Update dashboard
-            if self.dashboard:
-                self.dashboard.update_data('balances', {
+            # Update dashboard with virtual balances for paper trading
+            if config.dry_run and self.balance_manager:
+                # Get all virtual balances
+                upbit_balances = {}
+                binance_balances = {}
+                
+                for asset, balance in self.balance_manager.balances.get('upbit', {}).items():
+                    if balance.total > 0:
+                        upbit_balances[asset] = float(balance.total)
+                        
+                for asset, balance in self.balance_manager.balances.get('binance', {}).items():
+                    if balance.total > 0:
+                        binance_balances[asset] = float(balance.total)
+                        
+                dashboard_data = {
+                    'Upbit': upbit_balances,
+                    'Binance': binance_balances
+                }
+            else:
+                # Real trading balances
+                dashboard_data = {
                     'Upbit': {'KRW': float(upbit_krw)},
                     'Binance': {'USDT': float(binance_usdt)}
-                })
+                }
+            
+            # If paper trading, show virtual portfolio performance
+            if config.dry_run and self.balance_manager:
+                total_values = self.balance_manager.get_total_value_krw(self.exchange_rate)
+                initial_value = Decimal("20000000")  # 10M KRW + 10K USDT * ~1300
+                current_value = sum(total_values.values())
+                profit_loss = current_value - initial_value
+                profit_loss_pct = (profit_loss / initial_value) * 100
+                
+                dashboard_data['paper_trading'] = {
+                    'initial_value_krw': float(initial_value),
+                    'current_value_krw': float(current_value),
+                    'profit_loss_krw': float(profit_loss),
+                    'profit_loss_percent': float(profit_loss_pct),
+                    'total_trades': len(self.balance_manager.trades)
+                }
+                
+                logger.info(
+                    f"Paper Trading Performance - "
+                    f"P&L: {profit_loss:,.0f} KRW ({profit_loss_pct:.2f}%), "
+                    f"Total trades: {len(self.balance_manager.trades)}"
+                )
+                
+            if self.dashboard:
+                self.dashboard.update_data('balances', dashboard_data)
                 
             logger.info(
                 f"Balances - Upbit: {upbit_krw:,.0f} KRW, "
@@ -384,24 +536,58 @@ class ArbitrageTradingBot:
             
         except Exception as e:
             logger.error(f"Error checking balances: {e}")
+            
+    def _handle_orderbook_failure(self, coin: str):
+        """Handle orderbook access failures for a coin"""
+        # Increment failure count
+        if coin not in self.orderbook_failure_counts:
+            self.orderbook_failure_counts[coin] = 0
+        self.orderbook_failure_counts[coin] += 1
+        
+        # Check if we should skip this coin
+        if self.orderbook_failure_counts[coin] >= self.max_orderbook_failures:
+            if coin not in self.failed_orderbook_coins:
+                logger.warning(
+                    f"Skipping {coin} due to {self.max_orderbook_failures} consecutive orderbook failures. "
+                    f"This may be due to IP whitelist or API permission issues."
+                )
+                self.failed_orderbook_coins.add(coin)
+                
+                # Log current status
+                active_coins = len(self.monitor_coins) - len(self.failed_orderbook_coins)
+                logger.info(f"Currently monitoring {active_coins} coins (skipping {len(self.failed_orderbook_coins)} due to API issues)")
 
 
 async def main():
     bot = ArbitrageTradingBot()
+    shutdown_event = asyncio.Event()
     
     # Setup signal handlers
     def signal_handler(sig, frame):
         logger.info("Received shutdown signal")
-        asyncio.create_task(bot.stop())
+        shutdown_event.set()
         
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
+    # Create tasks for both bot and shutdown monitoring
+    bot_task = asyncio.create_task(bot.start())
+    
+    async def monitor_shutdown():
+        await shutdown_event.wait()
+        await bot.stop()
+        bot_task.cancel()
+    
+    shutdown_task = asyncio.create_task(monitor_shutdown())
+    
     try:
-        await bot.start()
+        await bot_task
+    except asyncio.CancelledError:
+        logger.info("Bot task cancelled")
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     finally:
+        shutdown_event.set()  # Ensure shutdown is triggered
         await bot.stop()
         
 

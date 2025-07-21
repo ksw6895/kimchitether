@@ -1,0 +1,30 @@
+============================================================
+PAPER TRADING PERFORMANCE REPORT
+============================================================
+
+TRADING SUMMARY:
+  Total Trades: 1
+  Successful Trades: 0
+  Failed Trades: 1
+  Win Rate: 0.0%
+
+FINANCIAL PERFORMANCE:
+  Total Volume: 2,651,798 KRW
+  Total Profit: -2,649,349 KRW
+  Total Fees: 1,329 KRW
+  Net Profit: -2,650,678 KRW
+  ROI: -13.25%
+
+TRADE STATISTICS:
+  Average Profit per Trade: -2,650,678 KRW
+  Best Trade: -2,649,349 KRW
+  Worst Trade: -2,649,349 KRW
+
+RISK METRICS:
+  Sharpe Ratio: 0.00
+  Max Drawdown: 13.25%
+
+PERFORMANCE BY COIN:
+  WAXP: 1 trades, -2,649,349 KRW profit
+
+============================================================

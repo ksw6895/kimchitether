@@ -29,12 +29,16 @@ class ForwardArbitrageStrategy:
     
     def __init__(self, binance_client: BinanceClient, upbit_client: UpbitClient,
                  max_slippage: Decimal = Decimal("0.005"),
-                 transfer_timeout_minutes: int = 30):
+                 transfer_timeout_minutes: int = 30,
+                 is_paper_trading: bool = False):
         self.binance = binance_client
         self.upbit = upbit_client
         self.max_slippage = max_slippage
         self.transfer_timeout = timedelta(minutes=transfer_timeout_minutes)
         self.active_trades = {}
+        self.is_paper_trading = is_paper_trading
+        # Use 1 minute for paper trading, otherwise use configured timeout
+        self.paper_trading_transfer_time = 60  # seconds
         
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> Dict:
         trade_id = f"forward_{opportunity.coin_symbol}_{datetime.now().timestamp()}"
@@ -261,6 +265,16 @@ class ForwardArbitrageStrategy:
             
     async def _wait_for_binance_deposit(self, coin: str, amount: Decimal, 
                                        withdrawal_id: str):
+        if self.is_paper_trading:
+            # For paper trading, simulate 1 minute transfer time
+            logger.info(f"Paper trading: Simulating {coin} transfer to Binance (1 minute)...")
+            await asyncio.sleep(self.paper_trading_transfer_time)
+            logger.info(f"Paper trading: {coin} transfer to Binance completed")
+            
+            # In paper trading, the transfer is already simulated by MockUpbitClient.withdraw()
+            return
+            
+        # Real trading logic
         start_time = datetime.now()
         initial_balance = self.binance.get_balance(coin)['total']
         
@@ -284,6 +298,16 @@ class ForwardArbitrageStrategy:
         
     async def _wait_for_upbit_deposit(self, currency: str, amount: Decimal,
                                     withdrawal_id: str):
+        if self.is_paper_trading:
+            # For paper trading, simulate 1 minute transfer time
+            logger.info(f"Paper trading: Simulating {currency} transfer to Upbit (1 minute)...")
+            await asyncio.sleep(self.paper_trading_transfer_time)
+            logger.info(f"Paper trading: {currency} transfer to Upbit completed")
+            
+            # In paper trading, the transfer is already simulated by MockBinanceClient.withdraw()
+            return
+            
+        # Real trading logic
         start_time = datetime.now()
         initial_balance = self.upbit.get_balance(currency)['total']
         
@@ -318,6 +342,20 @@ class ForwardArbitrageStrategy:
             'AVAX': 'AVAX-C'
         }
         return network_map.get(coin, coin)
+        
+    def _get_network_fee(self, coin: str) -> Decimal:
+        """Get network fee for a coin"""
+        network_fees = {
+            "BTC": Decimal("0.0005"),
+            "ETH": Decimal("0.005"),
+            "XRP": Decimal("0.25"),
+            "USDT": Decimal("1.0"),
+            "ADA": Decimal("1.0"),
+            "SOL": Decimal("0.01"),
+            "DOT": Decimal("0.1"),
+            "AVAX": Decimal("0.01")
+        }
+        return network_fees.get(coin, Decimal("1.0"))  # Default fee
         
     def _calculate_profit(self, trade_record: Dict) -> Dict:
         try:

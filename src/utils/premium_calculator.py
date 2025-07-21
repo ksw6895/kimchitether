@@ -108,25 +108,28 @@ class PremiumCalculator:
             
     def calculate_tether_premium(self) -> Optional[PremiumInfo]:
         try:
-            # Get Upbit USDT price in KRW
+            # Get Upbit USDT price in KRW (actual market price)
             upbit_usdt_price = self.upbit.get_ticker_price("KRW-USDT")
             
-            # Get exchange rate
+            # Get exchange rate for reference
             usd_krw_rate = self.exchange_rate.get_usd_krw_rate()
             if usd_krw_rate is None:
                 logger.error("Cannot calculate USDT premium: Exchange rate unavailable")
                 return None
             
-            # USDT should be 1 USD, so theoretical price in KRW is the exchange rate
+            # Use exchange rate as theoretical price (USDT should be 1 USD)
             theoretical_usdt_krw = usd_krw_rate
             
-            # Calculate premium rate
+            # Calculate premium based on actual Upbit USDT market price
+            # This reflects the real cost of buying/selling USDT on Upbit
             premium_rate = ((upbit_usdt_price - theoretical_usdt_krw) / theoretical_usdt_krw) * 100
+            
+            logger.debug(f"USDT Premium - Upbit: {upbit_usdt_price:.2f} KRW, Theoretical: {theoretical_usdt_krw:.2f} KRW, Premium: {premium_rate:.2f}%")
             
             return PremiumInfo(
                 symbol="USDT",
                 upbit_price_krw=upbit_usdt_price,
-                binance_price_usdt=Decimal("1"),  # USDT is always 1 USD
+                binance_price_usdt=Decimal("1"),  # USDT is always 1 USD on Binance
                 binance_price_krw=theoretical_usdt_krw,
                 premium_rate=premium_rate,
                 reverse_premium_rate=-premium_rate,

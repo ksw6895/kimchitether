@@ -1,0 +1,37 @@
+{
+  "timestamp": "2025-07-21T22:09:55.957402",
+  "trading_summary": {
+    "total_trades": 1,
+    "successful_trades": 0,
+    "failed_trades": 1,
+    "win_rate_percent": 0.0
+  },
+  "financial_performance": {
+    "total_volume_krw": 2651797.783100366,
+    "total_profit_krw": -2649349.191819558,
+    "total_fees_krw": 1328.843250182931,
+    "net_profit_krw": -2650678.035069741,
+    "roi_percent": -13.253390175348704
+  },
+  "trade_statistics": {
+    "average_profit_per_trade_krw": -2650678.035069741,
+    "best_trade_profit_krw": -2649349.191819558,
+    "worst_trade_loss_krw": -2649349.191819558
+  },
+  "risk_metrics": {
+    "sharpe_ratio": 0.0,
+    "max_drawdown_percent": 13.24673595909779
+  },
+  "performance_by_coin": {
+    "WAXP": {
+      "trades": 1,
+      "profit_krw": -2649349.191819558
+    }
+  },
+  "daily_returns": [
+    {
+      "date": "2025-07-21T00:00:00",
+      "cumulative_return": -0.13246735959097788
+    }
+  ]
+}

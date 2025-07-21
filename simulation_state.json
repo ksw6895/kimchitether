@@ -1,0 +1,117 @@
+{
+  "balances": {
+    "binance": {
+      "USDT": {
+        "available": "11886.82854823004882962470802",
+        "locked": "0"
+      },
+      "BTC": {
+        "available": "0",
+        "locked": "0"
+      },
+      "ETH": {
+        "available": "0",
+        "locked": "0"
+      },
+      "WAXP": {
+        "available": "0E-23",
+        "locked": "0"
+      },
+      "LSK": {
+        "available": "2405.680583811960488986784141",
+        "locked": "0"
+      }
+    },
+    "upbit": {
+      "KRW": {
+        "available": "6364449.699385765897270000000",
+        "locked": "0"
+      },
+      "BTC": {
+        "available": "0",
+        "locked": "0"
+      },
+      "ETH": {
+        "available": "0",
+        "locked": "0"
+      },
+      "USDT": {
+        "available": "0",
+        "locked": "0"
+      },
+      "WAXP": {
+        "available": "29.03193010127648787523361",
+        "locked": "0"
+      },
+      "LSK": {
+        "available": "1.408088672484444933920705",
+        "locked": "0"
+      }
+    }
+  },
+  "trades": [
+    {
+      "timestamp": "2025-07-21T22:07:01.036278",
+      "trade_id": "SIM_upbit_2",
+      "exchange": "upbit",
+      "symbol": "KRW-WAXP",
+      "side": "buy",
+      "price": "33.67074467149431951805491913",
+      "quantity": "30003.93940654357698012459211",
+      "fee": "505.1274914483577900000000000",
+      "fee_asset": "KRW",
+      "total_cost": "1010254.982896715580000000000",
+      "trade_type": "market"
+    },
+    {
+      "timestamp": "2025-07-21T22:08:41.595864",
+      "trade_id": "SIM_binance_3",
+      "exchange": "binance",
+      "symbol": "WAXPUSDT",
+      "side": "SELL",
+      "price": "0.03203191790741617174004629576",
+      "quantity": "58963.60220935319560126526893",
+      "fee": "1.888717265495544373998706728",
+      "fee_asset": "USDT",
+      "total_cost": "1888.717265495544373998706728",
+      "trade_type": "market"
+    },
+    {
+      "timestamp": "2025-07-21T22:08:42.126632",
+      "trade_id": "SIM_upbit_4",
+      "exchange": "upbit",
+      "symbol": "KRW-LSK",
+      "side": "buy",
+      "price": "680.8943963207593873716837541",
+      "quantity": "2408.088672484444933920704846",
+      "fee": "819.8270414690775000000000000",
+      "fee_asset": "KRW",
+      "total_cost": "1639654.082938155000000000000",
+      "trade_type": "market"
+    }
+  ],
+  "transfers": [
+    {
+      "timestamp": "2025-07-21T22:07:21.165280",
+      "transfer_id": "SIM_TRANSFER_2",
+      "asset": "WAXP",
+      "amount": "30001.89817117521138735837441",
+      "from_exchange": "upbit",
+      "to_exchange": "binance",
+      "fee": "1.0",
+      "status": "completed"
+    },
+    {
+      "timestamp": "2025-07-21T22:08:58.611812",
+      "transfer_id": "SIM_TRANSFER_3",
+      "asset": "LSK",
+      "amount": "2405.680583811960488986784141",
+      "from_exchange": "upbit",
+      "to_exchange": "binance",
+      "fee": "1.0",
+      "status": "completed"
+    }
+  ],
+  "trade_counter": 4,
+  "transfer_counter": 3
+}

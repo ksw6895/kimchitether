@@ -21,6 +21,7 @@ class UpbitClient:
         self._krw_markets_cache = []
         self._krw_markets_last_update = None
         self._cache_duration = timedelta(minutes=30)
+        self._api_access_verified = False
         
     def _generate_jwt_token(self, query: Dict = None) -> str:
         payload = {
@@ -68,16 +69,65 @@ class UpbitClient:
     def get_orderbook(self, ticker: str) -> Dict:
         try:
             orderbook = pyupbit.get_orderbook(ticker)
-            if not orderbook:
-                raise ValueError(f"Failed to get orderbook for {ticker}")
+            
+            # Enhanced error logging for debugging
+            if orderbook is None:
+                logger.error(f"pyupbit.get_orderbook returned None for {ticker} - likely API access issue")
+                raise ValueError(f"No orderbook data returned for {ticker} - check API access and IP whitelist")
+            
+            # Handle both dict (single ticker) and list (multiple tickers) responses
+            if isinstance(orderbook, dict):
+                # Single ticker response - use directly
+                ob = orderbook
+                logger.debug(f"Orderbook for {ticker} returned as dict")
+            elif isinstance(orderbook, list):
+                # Multiple ticker response - get first element
+                if len(orderbook) == 0:
+                    logger.error(f"Empty orderbook list for {ticker}")
+                    raise ValueError(f"Empty orderbook data for {ticker}")
+                ob = orderbook[0]
+                logger.debug(f"Orderbook for {ticker} returned as list with {len(orderbook)} items")
+            else:
+                logger.error(f"Unexpected orderbook type for {ticker}: {type(orderbook)}")
+                raise ValueError(f"Invalid orderbook format for {ticker} - expected dict or list, got {type(orderbook).__name__}")
+            
+            # Check if it's an error response
+            if 'error' in ob:
+                error_code = ob['error'].get('name', 'Unknown')
+                error_msg = ob['error'].get('message', 'No message')
+                logger.error(f"Upbit API error for {ticker}: {error_code} - {error_msg}")
+                if 'UNAUTHORIZED' in error_code or 'jwt' in error_msg.lower():
+                    raise ValueError(f"Authentication error for {ticker}: {error_msg} - Check API keys and IP whitelist")
+                else:
+                    raise ValueError(f"API error for {ticker}: {error_code} - {error_msg}")
+            
+            # Extract orderbook data
+            orderbook_units = ob.get('orderbook_units', [])
+            if not orderbook_units:
+                logger.error(f"No orderbook units for {ticker}, response: {ob}")
+                raise ValueError(f"No orderbook units for {ticker}")
                 
-            ob = orderbook[0]
+            bids = []
+            asks = []
+            
+            for unit in orderbook_units:
+                # Bid side
+                bid_price = unit.get('bid_price')
+                bid_size = unit.get('bid_size')
+                if bid_price and bid_size:
+                    bids.append((Decimal(str(bid_price)), Decimal(str(bid_size))))
+                    
+                # Ask side
+                ask_price = unit.get('ask_price')
+                ask_size = unit.get('ask_size')
+                if ask_price and ask_size:
+                    asks.append((Decimal(str(ask_price)), Decimal(str(ask_size))))
+                    
             return {
-                'bids': [(Decimal(str(unit['price'])), Decimal(str(unit['size']))) 
-                        for unit in ob['orderbook_units']],
-                'asks': [(Decimal(str(unit['ask_price'])), Decimal(str(unit['ask_size']))) 
-                        for unit in ob['orderbook_units']],
-                'timestamp': ob['timestamp']
+                'bids': bids,
+                'asks': asks,
+                'timestamp': ob.get('timestamp', 0),
+                'orderbook_units': orderbook_units  # Keep original for compatibility
             }
         except Exception as e:
             logger.error(f"Failed to get orderbook for {ticker}: {e}")
@@ -394,3 +444,72 @@ class UpbitClient:
         except Exception as e:
             logger.error(f"Failed to get tradable markets: {e}")
             raise
+            
+    def verify_api_access(self) -> Tuple[bool, str]:
+        """Verify API access and permissions
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Test 1: Check if we can get account info
+            logger.info("Verifying Upbit API access...")
+            
+            # Try to get balance (requires authentication)
+            try:
+                balances = self.upbit.get_balances()
+                if balances is None:
+                    return False, "API returned None for balance check - verify API keys"
+                logger.info("✓ Balance API access verified")
+            except Exception as e:
+                error_msg = str(e)
+                if 'jwt' in error_msg.lower() or 'unauthorized' in error_msg.lower():
+                    return False, f"Authentication failed: {error_msg} - Check API keys and secret"
+                else:
+                    return False, f"Balance API error: {error_msg}"
+            
+            # Test 2: Check orderbook access (public API but may be IP restricted)
+            test_ticker = "KRW-BTC"
+            try:
+                orderbook = pyupbit.get_orderbook(test_ticker)
+                if orderbook is None:
+                    return False, "Orderbook API returned None - IP may not be whitelisted"
+                    
+                # Handle both dict and list responses
+                if isinstance(orderbook, dict):
+                    # Single ticker response
+                    if 'error' in orderbook:
+                        error_info = orderbook['error']
+                        return False, f"Orderbook API error: {error_info.get('message', 'Unknown error')} - Add your IP to Upbit whitelist"
+                    if 'orderbook_units' not in orderbook:
+                        return False, f"Invalid orderbook structure - missing orderbook_units"
+                elif isinstance(orderbook, list):
+                    # Multiple ticker response
+                    if len(orderbook) == 0:
+                        return False, f"Empty orderbook list - API may be restricted"
+                    if 'error' in orderbook[0]:
+                        error_info = orderbook[0]['error']
+                        return False, f"Orderbook API error: {error_info.get('message', 'Unknown error')} - Add your IP to Upbit whitelist"
+                else:
+                    return False, f"Invalid orderbook format: {type(orderbook)} - API may be restricted"
+                    
+                logger.info("✓ Orderbook API access verified")
+                
+            except Exception as e:
+                return False, f"Orderbook API error: {str(e)} - Check IP whitelist"
+            
+            # Test 3: Try to get markets list
+            try:
+                markets = pyupbit.get_tickers()
+                if not markets:
+                    return False, "Cannot fetch market list - API access may be restricted"
+                logger.info("✓ Market list API access verified")
+            except Exception as e:
+                return False, f"Market API error: {str(e)}"
+            
+            self._api_access_verified = True
+            return True, "All API access verified successfully"
+            
+        except Exception as e:
+            logger.error(f"API verification failed: {e}")
+            return False, f"Verification error: {str(e)}"
